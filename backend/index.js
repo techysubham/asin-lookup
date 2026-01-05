@@ -12,9 +12,10 @@ const CACHE_TTL = parseInt(process.env.CACHE_TTL) || 2592000; // 30 days
 
 // Enhanced CORS configuration
 app.use(cors({
-  origin: '*',
+  origin: ['https://asin-lookup.vercel.app', 'http://localhost:5173', '*'],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 app.use(express.json());
 
