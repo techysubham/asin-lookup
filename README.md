@@ -70,6 +70,32 @@ npm run dev
 
 3. Open your browser to `http://localhost:5173`
 
+## Deployment
+
+### Deploying to Vercel
+
+This project can be deployed to Vercel in two ways:
+
+#### Option 1: Deploy Frontend and Backend Separately (Recommended)
+
+1. **Deploy Backend:**
+   - Create a new Vercel project for the backend
+   - Set root directory to `backend`
+   - Add environment variables: `MONGO_URI`, `PORT`, `CACHE_TTL`
+   - Deploy
+
+2. **Deploy Frontend:**
+   - Create another Vercel project for the frontend
+   - Set root directory to `frontend`
+   - Add environment variable: `VITE_API_BASE=https://your-backend-url.vercel.app`
+   - Deploy
+
+#### Option 2: Deploy as Monorepo (Frontend Only)
+
+The current `vercel.json` deploys only the frontend. You'll need to:
+1. Deploy the backend separately (Render, Railway, or another Vercel project)
+2. Update the `VITE_API_BASE` environment variable in Vercel with your backend URL
+
 ## Usage
 
 1. Enter one or more ASINs in the text area:
