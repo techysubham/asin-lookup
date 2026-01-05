@@ -15,13 +15,15 @@ app.use(express.json());
 
 // Product class
 class Product {
-  constructor(asin, title, description, images = [], brand, price, source = "amazon-helper") {
+  constructor(asin, title, description, images = [], brand, price, source = "amazon-helper", rating = null, reviewCount = 0) {
     this.asin = asin.toUpperCase();
     this.title = title;
     this.description = description;
     this.images = images;
     this.brand = brand;
     this.price = price;
+    this.rating = rating;
+    this.reviewCount = reviewCount;
     this.last_updated = new Date().toISOString();
     this.source = source;
   }
@@ -62,6 +64,10 @@ async function fetchProductFromProvider(asin) {
 
     const description = (item.ItemInfo?.Features?.DisplayValues || []).join("\n");
 
+    // Extract rating and review count
+    const rating = item.CustomerReviews?.StarRating?.Value || null;
+    const reviewCount = item.CustomerReviews?.Count || 0;
+
     const allImages = [];
     if (item.Images?.Primary?.Large?.URL) {
       allImages.push(item.Images.Primary.Large.URL);
@@ -81,7 +87,7 @@ async function fetchProductFromProvider(asin) {
       });
     }
 
-    return new Product(asin, title, description, allImages, brand, price, "amazon-helper");
+    return new Product(asin, title, description, allImages, brand, price, "amazon-helper", rating, reviewCount);
   } catch (err) {
     console.error(`❌ Error fetching ${asin}:`, err.message);
     return null;
@@ -141,7 +147,7 @@ app.post("/products", async (req, res) => {
           await saveProductToDB(product);
         }
 
-        return product || new Product(asin, "Not found", "", [], "", "");
+        return product || new Product(asin, "Not found", "", [], "", "", "amazon-helper", null, 0);
       })
     );
     res.json(results);

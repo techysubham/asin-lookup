@@ -9,6 +9,25 @@ export default function App() {
 
   const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
+  // Helper function to render stars
+  const renderStars = (rating) => {
+    if (!rating) return null;
+    const stars = [];
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+    
+    for (let i = 0; i < 5; i++) {
+      if (i < fullStars) {
+        stars.push(<span key={i} className="star filled">★</span>);
+      } else if (i === fullStars && hasHalfStar) {
+        stars.push(<span key={i} className="star half">★</span>);
+      } else {
+        stars.push(<span key={i} className="star empty">☆</span>);
+      }
+    }
+    return stars;
+  };
+
   async function lookupProducts() {
     if (!asins.trim()) return;
     
@@ -88,6 +107,18 @@ export default function App() {
                 
                 <h3>{product.title}</h3>
                 <p className="brand">🏷️ <strong>{product.brand}</strong></p>
+                
+                {product.rating && (
+                  <div className="rating">
+                    <div className="stars">
+                      {renderStars(product.rating)}
+                    </div>
+                    <span className="rating-text">
+                      {product.rating.toFixed(1)} ({product.reviewCount.toLocaleString()} reviews)
+                    </span>
+                  </div>
+                )}
+                
                 <p className="price">💰 {product.price}</p>
                 
                 {product.images && product.images.length > 0 && (
