@@ -4,30 +4,25 @@ dotenv.config();
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
-const { connectDB, getProductFromDB, saveProductToDB } = require("./db");
+const { connectDB, getProductFromDB, saveProductToDB, Product } = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 const CACHE_TTL = parseInt(process.env.CACHE_TTL) || 2592000; // 30 days
 
-app.use(cors());
+// Enhanced CORS configuration
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
-// Product class
-class Product {
-  constructor(asin, title, description, images = [], brand, price, source = "amazon-helper", rating = null, reviewCount = 0) {
-    this.asin = asin.toUpperCase();
-    this.title = title;
-    this.description = description;
-    this.images = images;
-    this.brand = brand;
-    this.price = price;
-    this.rating = rating;
-    this.reviewCount = reviewCount;
-    this.last_updated = new Date().toISOString();
-    this.source = source;
-  }
-}
+// Log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 
 // Check if product data is stale
 function isStale(lastUpdated) {
@@ -40,7 +35,13 @@ function isStale(lastUpdated) {
 async function fetchProductFromProvider(asin) {
   try {
     const url = `https://amazon-helper.vercel.app/api/items?asin=${encodeURIComponent(asin)}`;
-    const response = await axios.get(url, { timeout: 10000 });
+    console.log(`Fetching ${asin} from provider...`);
+    const response = await axios.get(url, { 
+      timeout: 30000, // 30 seconds for mobile networks
+      headers: {
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
     
     const item = response.data?.ItemsResult?.Items?.[0];
     if (!item) {
@@ -87,7 +88,17 @@ async function fetchProductFromProvider(asin) {
       });
     }
 
-    return new Product(asin, title, description, allImages, brand, price, "amazon-helper", rating, reviewCount);
+    return {
+      asin: asin.toUpperCase(),
+      title,
+      description,
+      images: allImages,
+      brand,
+      price,
+      rating,
+      reviewCount,
+      source: "amazon-helper"
+    };
   } catch (err) {
     console.error(`❌ Error fetching ${asin}:`, err.message);
     return null;
@@ -110,7 +121,11 @@ app.get("/product/:asin", async (req, res) => {
     // Fetch from provider if not in DB or stale
     product = await fetchProductFromProvider(asin);
     if (!product) {
-      return res.status(404).json({ error: "Product not found" });
+      console.log(`Product ${asin} not found in API`);
+      return res.status(404).json({ 
+        error: "Product not found",
+        message: "Unable to fetch product data from Amazon API. Please verify the ASIN is correct."
+      });
     }
 
     // Save to database
@@ -131,6 +146,14 @@ app.post("/products", async (req, res) => {
     return res.status(400).json({ error: "asins must be an array" });
   }
 
+  if (asins.length === 0) {
+    return res.status(400).json({ error: "asins array cannot be empty" });
+  }
+
+  if (asins.length > 20) {
+    return res.status(400).json({ error: "Maximum 20 ASINs allowed per request" });
+  }
+
   try {
     const results = await Promise.all(
       asins.map(async (asin) => {
@@ -147,7 +170,17 @@ app.post("/products", async (req, res) => {
           await saveProductToDB(product);
         }
 
-        return product || new Product(asin, "Not found", "", [], "", "", "amazon-helper", null, 0);
+        return product || {
+          asin: asin.toUpperCase(),
+          title: "Not found",
+          description: "",
+          images: [],
+          brand: "",
+          price: "",
+          rating: null,
+          reviewCount: 0,
+          source: "amazon-helper"
+        };
       })
     );
     res.json(results);

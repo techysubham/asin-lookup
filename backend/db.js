@@ -1,59 +1,84 @@
-const { MongoClient } = require("mongodb");
+const mongoose = require('mongoose');
+const Product = require('./models/Product');
 
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017";
-const DB_NAME = "asin_lookup";
-const COLLECTION_NAME = "products";
-
-let db = null;
-let productsCollection = null;
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/asin_lookup";
 
 async function connectDB() {
   try {
     console.log("🔄 Connecting to MongoDB...");
     console.log("URI:", process.env.MONGO_URI ? "***hidden***" : "not set");
     
-    const client = new MongoClient(MONGO_URI, { 
+    await mongoose.connect(MONGO_URI, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     });
     
-    await client.connect();
-    db = client.db(DB_NAME);
-    productsCollection = db.collection(COLLECTION_NAME);
-    
-    await productsCollection.createIndex({ asin: 1 });
-    
-    console.log("✅ MongoDB Atlas connected successfully!");
-    return productsCollection;
+    console.log("✅ MongoDB connected successfully with Mongoose!");
+    return true;
   } catch (err) {
     console.error("❌ MongoDB connection failed:", err.message);
-    return null;
+    return false;
   }
 }
 
 async function getProductFromDB(asin) {
-  if (!productsCollection) return null;
   try {
-    return await productsCollection.findOne({ asin: asin.toUpperCase() });
+    return await Product.findByAsin(asin);
   } catch (err) {
     console.error("DB read error:", err);
     return null;
   }
 }
 
-async function saveProductToDB(product) {
-  if (!productsCollection) return false;
+async function saveProductToDB(productData) {
   try {
-    await productsCollection.updateOne(
-      { asin: product.asin },
-      { $set: product },
-      { upsert: true }
-    );
-    return true;
+    const product = await Product.upsertProduct(productData);
+    return product;
   } catch (err) {
-    console.error("DB write error:", err);
+    console.error("DB write error:", err.message);
     return false;
   }
 }
 
-module.exports = { connectDB, getProductFromDB, saveProductToDB, productsCollection: () => productsCollection };
+// Get all products with optional filters
+async function getAllProducts(filters = {}, limit = 100, skip = 0) {
+  try {
+    return await Product.find(filters)
+      .sort({ last_updated: -1 })
+      .limit(limit)
+      .skip(skip);
+  } catch (err) {
+    console.error("DB query error:", err);
+    return [];
+  }
+}
+
+// Get product statistics
+async function getProductStats() {
+  try {
+    const totalProducts = await Product.countDocuments();
+    const productsWithRatings = await Product.countDocuments({ rating: { $ne: null } });
+    const avgRating = await Product.aggregate([
+      { $match: { rating: { $ne: null } } },
+      { $group: { _id: null, avgRating: { $avg: "$rating" } } }
+    ]);
+    
+    return {
+      totalProducts,
+      productsWithRatings,
+      averageRating: avgRating[0]?.avgRating || 0
+    };
+  } catch (err) {
+    console.error("Stats error:", err);
+    return null;
+  }
+}
+
+module.exports = { 
+  connectDB, 
+  getProductFromDB, 
+  saveProductToDB,
+  getAllProducts,
+  getProductStats,
+  Product
+};
