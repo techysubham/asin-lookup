@@ -36,6 +36,11 @@ export default function App() {
     setProducts([]);
 
     try {
+      // Check if online
+      if (!navigator.onLine) {
+        throw new Error("No internet connection. Please check your network and try again.");
+      }
+
       // Parse ASINs from textarea (comma or newline separated)
       const asinList = asins
         .split(/[,\n]+/)
@@ -49,7 +54,10 @@ export default function App() {
       // If single ASIN, use the single product endpoint
       if (asinList.length === 1) {
         const res = await fetch(`${API_BASE}/product/${asinList[0]}`);
-        if (!res.ok) throw new Error(`Product not found (HTTP ${res.status})`);
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.message || `Product not found (HTTP ${res.status})`);
+        }
         const data = await res.json();
         setProducts([data]);
       } else {
@@ -59,12 +67,16 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ asins: asinList })
         });
-        if (!res.ok) throw new Error(`Request failed (HTTP ${res.status})`);
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.message || `Request failed (HTTP ${res.status})`);
+        }
         const data = await res.json();
         setProducts(data);
       }
     } catch (err) {
-      setError(err.message);
+      console.error("Fetch error:", err);
+      setError(err.message || "Failed to fetch product data. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
