@@ -192,7 +192,11 @@ app.post("/products", async (req, res) => {
 
 // Health check
 app.get("/", (req, res) => {
-  res.json({ message: "ASIN lookup API running" });
+  res.json({ 
+    message: "ASIN lookup API running",
+    status: "active",
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Start server
