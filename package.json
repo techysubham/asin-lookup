@@ -1,0 +1,11 @@
+{
+  "name": "asin-lookup",
+  "version": "1.0.0",
+  "description": "ASIN lookup system with React + Express",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "start:backend": "cd backend && npm start"
+  }
+}
