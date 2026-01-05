@@ -76,7 +76,12 @@ export default function App() {
       }
     } catch (err) {
       console.error("Fetch error:", err);
-      setError(err.message || "Failed to fetch product data. Please check your connection and try again.");
+      const errorMsg = err.message || "Failed to fetch product data";
+      if (errorMsg.includes("Failed to fetch") || errorMsg.includes("NetworkError")) {
+        setError("⚠️ Backend server is not responding. Please deploy the backend first or try again later.");
+      } else {
+        setError(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
