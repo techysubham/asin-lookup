@@ -62,6 +62,29 @@ const productSchema = new mongoose.Schema({
     enum: ['amazon-helper', 'manual', 'api'],
     default: 'amazon-helper'
   },
+  // eBay data fields
+  ebay: {
+    title: {
+      type: String,
+      default: ''
+    },
+    image: {
+      type: String,
+      default: ''
+    },
+    description: {
+      type: String,
+      default: ''
+    },
+    price: {
+      type: String,
+      default: ''
+    },
+    itemId: {
+      type: String,
+      default: ''
+    }
+  },
   last_updated: {
     type: Date,
     default: Date.now,
@@ -99,10 +122,11 @@ productSchema.statics.findByAsin = function(asin) {
 
 // Static method to upsert product
 productSchema.statics.upsertProduct = function(productData) {
+  const updateData = { ...productData, last_updated: new Date() };
   return this.findOneAndUpdate(
     { asin: productData.asin.toUpperCase() },
-    { $set: { ...productData, last_updated: new Date() } },
-    { upsert: true, new: true, runValidators: true }
+    updateData,
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   );
 };
 

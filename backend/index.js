@@ -5,6 +5,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { connectDB, getProductFromDB, saveProductToDB, Product } = require("./db");
+const { generateEbayContent } = require("./services/aiService");
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -116,6 +117,29 @@ app.get("/product/:asin", async (req, res) => {
     
     if (product && !isStale(product.last_updated)) {
       console.log(`✅ Returned from DB: ${asin}`);
+      
+      // Generate eBay content if missing
+      if (!product.ebay || !product.ebay.title) {
+        console.log(`🤖 Generating missing eBay content for ${asin}...`);
+        try {
+          const ebayContent = await generateEbayContent({
+            title: product.title,
+            brand: product.brand,
+            description: product.description,
+            price: product.price
+          });
+          product.ebay = ebayContent;
+          console.log(`🔍 Generated eBay content:`, ebayContent);
+          await saveProductToDB(product);
+          console.log(`✅ eBay content generated and saved for ${asin}`);
+          // Refetch from DB to get the updated product with ebay field
+          product = await getProductFromDB(asin);
+        } catch (aiError) {
+          console.error(`⚠️ AI generation failed for ${asin}:`, aiError.message);
+        }
+      }
+      
+      console.log(`📤 Returning product:`, JSON.stringify(product, null, 2));
       return res.json(product);
     }
 
@@ -127,6 +151,26 @@ app.get("/product/:asin", async (req, res) => {
         error: "Product not found",
         message: "Unable to fetch product data from Amazon API. Please verify the ASIN is correct."
       });
+    }
+
+    // Generate eBay content using AI
+    console.log(`🤖 Generating eBay content for ${asin}...`);
+    try {
+      const ebayContent = await generateEbayContent({
+        title: product.title,
+        brand: product.brand,
+        description: product.description,
+        price: product.price
+      });
+      product.ebay = ebayContent;
+      console.log(`✅ eBay content generated for ${asin}`);
+    } catch (aiError) {
+      console.error(`⚠️ AI generation failed for ${asin}:`, aiError.message);
+      product.ebay = {
+        title: null,
+        description: null,
+        image: null
+      };
     }
 
     // Save to database
@@ -162,12 +206,49 @@ app.post("/products", async (req, res) => {
         let product = await getProductFromDB(asin);
         
         if (product && !isStale(product.last_updated)) {
+          console.log(`✅ Found ${asin} in DB, checking eBay data...`);
+          // Generate eBay content if missing
+          if (!product.ebay || !product.ebay.title) {
+            console.log(`🤖 eBay data missing for ${asin}, generating now...`);
+            try {
+              const ebayContent = await generateEbayContent({
+                title: product.title,
+                brand: product.brand,
+                description: product.description,
+                price: product.price
+              });
+              product.ebay = ebayContent;
+              await saveProductToDB(product);
+              // Refetch to get updated product
+              product = await getProductFromDB(asin);
+            } catch (aiError) {
+              console.error(`⚠️ AI generation failed for ${asin}:`, aiError.message);
+            }
+          }
           return product;
         }
 
         // Fetch from provider
         product = await fetchProductFromProvider(asin);
         if (product) {
+          console.log(`📦 Fetched new product ${asin}, now generating eBay content...`);
+          // Generate eBay content using AI
+          try {
+            const ebayContent = await generateEbayContent({
+              title: product.title,
+              brand: product.brand,
+              description: product.description,
+              price: product.price
+            });
+            product.ebay = ebayContent;
+          } catch (aiError) {
+            console.error(`⚠️ AI generation failed for ${asin}:`, aiError.message);
+            product.ebay = {
+              title: null,
+              description: null,
+              image: null
+            };
+          }
           await saveProductToDB(product);
         }
 
@@ -198,6 +279,34 @@ app.get("/", (req, res) => {
     status: "active",
     timestamp: new Date().toISOString()
   });
+});
+
+// Generate AI content for a product
+app.post("/generate-ebay/:asin", async (req, res) => {
+  const { asin } = req.params;
+
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(400).json({ error: "OpenAI API key not configured" });
+    }
+
+    let product = await getProductFromDB(asin);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found. Fetch the product first." });
+    }
+
+    console.log(`🤖 Generating eBay content for: ${asin}`);
+    const ebayData = await generateEbayContent(product);
+    
+    product.ebay = ebayData;
+    await saveProductToDB(product);
+    
+    console.log(`✅ eBay content generated for: ${asin}`);
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Start server

@@ -91,6 +91,58 @@ export default function App() {
     if (e.key === "Enter" && e.ctrlKey) lookupProducts();
   };
 
+  // Export products to CSV
+  const exportToCSV = () => {
+    if (products.length === 0) return;
+
+    // Define CSV headers
+    const headers = [
+      'ASIN',
+      'Title',
+      'Brand',
+      'Price',
+      'Rating',
+      'Review Count',
+      'Description',
+      'Image URL',
+      'Source',
+      'Last Updated'
+    ];
+
+    // Convert products to CSV rows
+    const rows = products.map(product => [
+      product.asin,
+      `"${(product.title || '').replace(/"/g, '""')}"`, // Escape quotes
+      `"${(product.brand || '').replace(/"/g, '""')}"`,
+      product.price || '',
+      product.rating || '',
+      product.reviewCount || 0,
+      `"${(product.description || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+      product.images?.[0] || '',
+      product.source || '',
+      product.last_updated || ''
+    ]);
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `asin-lookup-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="container">
       <h1>🛍️ Amazon ASIN Lookup</h1>
@@ -113,47 +165,116 @@ export default function App() {
 
       {products.length > 0 && (
         <div className="results">
-          <h2 className="results-header">📦 Found {products.length} Product{products.length > 1 ? 's' : ''}</h2>
-          <div className="products-grid">
-            {products.map((product, idx) => (
-              <div key={idx} className="product">
-                <div className="product-header">
-                  <span className="asin-badge">{product.asin}</span>
-                  <span className="source">📦 {product.source}</span>
-                </div>
-                
-                <h3>{product.title}</h3>
-                <p className="brand">🏷️ <strong>{product.brand}</strong></p>
-                
-                {product.rating && (
-                  <div className="rating">
-                    <div className="stars">
-                      {renderStars(product.rating)}
-                    </div>
-                    <span className="rating-text">
-                      {product.rating.toFixed(1)} ({product.reviewCount.toLocaleString()} reviews)
-                    </span>
-                  </div>
-                )}
-                
-                <p className="price">💰 {product.price}</p>
-                
-                {product.images && product.images.length > 0 && (
-                  <div className="images">
-                    {product.images.slice(0, 3).map((img, i) => (
-                      <img key={i} src={img} alt={`Product ${i + 1}`} />
-                    ))}
-                  </div>
-                )}
-
-                {product.description && (
-                  <details className="description-toggle">
-                    <summary>View Description</summary>
-                    <p className="description">{product.description}</p>
-                  </details>
-                )}
-              </div>
-            ))}
+          <div className="results-header-row">
+            <h2 className="results-header">📦 Found {products.length} Product{products.length > 1 ? 's' : ''}</h2>
+            <button className="btn-export" onClick={exportToCSV}>
+              📥 Export to CSV
+            </button>
+          </div>
+          
+          <div className="table-container">
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>ASIN</th>
+                  <th>Amazon Image</th>
+                  <th>Amazon Title</th>
+                  <th>Brand</th>
+                  <th>Rating</th>
+                  <th>Amazon Price</th>
+                  <th>eBay Title (AI)</th>
+                  <th>eBay Image</th>
+                  <th>eBay Description (AI)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product, idx) => (
+                  <tr key={idx}>
+                    <td className="asin-cell">
+                      <span className="asin-badge">{product.asin}</span>
+                    </td>
+                    <td className="image-cell">
+                      {product.images && product.images.length > 0 && (
+                        <img src={product.images[0]} alt={product.title} className="product-thumbnail" />
+                      )}
+                    </td>
+                    <td className="title-cell">
+                      <div className="product-title">{product.title}</div>
+                      {product.description && (
+                        <details className="description-toggle">
+                          <summary>Amazon Description</summary>
+                          <p className="description">{product.description}</p>
+                        </details>
+                      )}
+                    </td>
+                    <td className="brand-cell">{product.brand}</td>
+                    <td className="rating-cell">
+                      {product.rating ? (
+                        <div className="rating-compact">
+                          <div className="stars-compact">
+                            {renderStars(product.rating)}
+                          </div>
+                          <div className="rating-info">
+                            <strong>{product.rating.toFixed(1)}</strong>
+                            <span className="review-count">({product.reviewCount.toLocaleString()})</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="no-rating">N/A</span>
+                      )}
+                    </td>
+                    <td className="price-cell">
+                      <strong>{product.price}</strong>
+                    </td>
+                    <td className="title-cell">
+                      {product.ebay?.title ? (
+                        <div className="product-title ai-generated">
+                          {product.ebay.title}
+                          <span className="ai-badge">🤖 AI</span>
+                        </div>
+                      ) : (
+                        <span className="no-data">Not generated</span>
+                      )}
+                    </td>
+                    <td className="image-cell">
+                      {product.ebay?.image ? (
+                        <img src={product.ebay.image} alt={product.ebay.title || 'eBay'} className="product-thumbnail" />
+                      ) : (
+                        <span className="no-data">-</span>
+                      )}
+                    </td>
+                    <td className="description-cell">
+                      {product.ebay?.description ? (
+                        <div className="ebay-description ai-generated">
+                          {product.ebay.description}
+                          <span className="ai-badge">🤖 AI</span>
+                        </div>
+                      ) : (
+                        <span className="no-data">Not generated</span>
+                      )}
+                    </td>
+                    <td className="price-cell">
+                      {product.ebay?.price ? (
+                        <strong>{product.ebay.price}</strong>
+                      ) : (
+                        <span className="no-data">-</span>
+                      )}
+                    </td>
+                    <td className="actions-cell">
+                      <button className="btn-small" onClick={() => window.open(`https://amazon.com/dp/${product.asin}`, '_blank')}>
+                        Amazon
+                      </button>
+                      {product.ebay?.itemId && (
+                        <button className="btn-small btn-ebay" onClick={() => window.open(`https://www.ebay.com/itm/${product.ebay.itemId}`, '_blank')}>
+                          eBay
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
