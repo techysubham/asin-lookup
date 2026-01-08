@@ -1,13 +1,102 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./App.css";
+import AccountSelector from "./AccountSelector";
+import ProductTable from "./ProductTable";
 
 export default function App() {
   const [asins, setAsins] = useState("");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  
+  // Account management state
+  const [accounts, setAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [view, setView] = useState('asin-lookup'); // 'asin-lookup' or 'manage-products'
 
   const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+
+  // Load accounts on mount
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
+
+  // Fetch all accounts
+  const fetchAccounts = async () => {
+    setAccountsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/accounts`);
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch accounts:", err);
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  // Add new account
+  const handleAddAccount = async (accountData) => {
+    const res = await fetch(`${API_BASE}/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(accountData)
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || 'Failed to create account');
+    }
+
+    const newAccount = await res.json();
+    setAccounts([...accounts, newAccount]);
+    setSelectedAccount(newAccount);
+    return newAccount;
+  };
+
+  // Select account
+  const handleSelectAccount = (account) => {
+    setSelectedAccount(account);
+  };
+
+  // Handle product update from table
+  const handleProductUpdate = (updatedProduct) => {
+    console.log('Product updated:', updatedProduct);
+  };
+
+  // Assign product to account
+  const assignProductToAccount = async (asin, accountId) => {
+    try {
+      const res = await fetch(`${API_BASE}/products/${asin}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountId })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Check if product already exists in the same account
+        if (data.alreadyExists) {
+          console.log(`Product ${asin} already exists in this account`);
+          return { alreadyExists: true, asin, message: data.message };
+        }
+        
+        // Successfully assigned
+        setProducts(products.map(p => p.asin === asin ? data : p));
+        return data;
+      }
+
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to assign product');
+    } catch (err) {
+      console.error("Assign error:", err);
+      throw err;
+    }
+  };
 
   // Helper function to render stars
   const renderStars = (rating) => {
@@ -59,6 +148,15 @@ export default function App() {
           throw new Error(errorData.message || `Product not found (HTTP ${res.status})`);
         }
         const data = await res.json();
+        
+        // Auto-assign to selected account
+        if (selectedAccount) {
+          const assignResult = await assignProductToAccount(data.asin, selectedAccount._id);
+          if (assignResult.alreadyExists) {
+            setError(`ℹ️ ${data.asin} already exists in this account`);
+          }
+        }
+        
         setProducts([data]);
       } else {
         // Multiple ASINs, use the batch endpoint
@@ -72,6 +170,22 @@ export default function App() {
           throw new Error(errorData.message || `Request failed (HTTP ${res.status})`);
         }
         const data = await res.json();
+        
+        // Auto-assign all to selected account
+        const alreadyExists = [];
+        if (selectedAccount) {
+          for (const product of data) {
+            const assignResult = await assignProductToAccount(product.asin, selectedAccount._id);
+            if (assignResult.alreadyExists) {
+              alreadyExists.push(product.asin);
+            }
+          }
+        }
+        
+        if (alreadyExists.length > 0) {
+          setError(`ℹ️ Already exist in this account: ${alreadyExists.join(', ')}`);
+        }
+        
         setProducts(data);
       }
     } catch (err) {
@@ -91,6 +205,21 @@ export default function App() {
     if (e.key === "Enter" && e.ctrlKey) lookupProducts();
   };
 
+  // Regenerate eBay content for a specific product
+  const regenerateEbayContent = async (asin) => {
+    try {
+      const res = await fetch(`${API_BASE}/product/${asin}?regenerate=true`);
+      if (!res.ok) throw new Error("Failed to regenerate");
+      const updatedProduct = await res.json();
+      
+      // Update the product in the state
+      setProducts(products.map(p => p.asin === asin ? updatedProduct : p));
+    } catch (err) {
+      console.error("Regenerate error:", err);
+      alert("Failed to regenerate eBay content. Please try again.");
+    }
+  };
+
   // Export products to CSV
   const exportToCSV = () => {
     if (products.length === 0) return;
@@ -98,30 +227,39 @@ export default function App() {
     // Define CSV headers
     const headers = [
       'ASIN',
-      'Title',
+      'Amazon Images',
+      'Amazon Title',
       'Brand',
-      'Price',
       'Rating',
-      'Review Count',
-      'Description',
-      'Image URL',
+      'Amazon Price',
+      'eBay Title (AI)',
+      'eBay Image Links',
+      'eBay Description (AI)',
+      'Amazon Description',
       'Source',
       'Last Updated'
     ];
 
     // Convert products to CSV rows
-    const rows = products.map(product => [
-      product.asin,
-      `"${(product.title || '').replace(/"/g, '""')}"`, // Escape quotes
-      `"${(product.brand || '').replace(/"/g, '""')}"`,
-      product.price || '',
-      product.rating || '',
-      product.reviewCount || 0,
-      `"${(product.description || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
-      product.images?.[0] || '',
-      product.source || '',
-      product.last_updated || ''
-    ]);
+    const rows = products.map(product => {
+      // Join all Amazon images with /
+      const amazonImages = (product.images || []).join(' / ');
+      
+      return [
+        product.asin,
+        `"${amazonImages}"`,
+        `"${(product.title || '').replace(/"/g, '""')}"`, // Escape quotes
+        `"${(product.brand || '').replace(/"/g, '""')}"`,
+        product.rating || '',
+        product.price || '',
+        `"${(product.ebay?.title || '').replace(/"/g, '""')}"`,
+        `"${(product.ebay?.imageLinks || '').replace(/"/g, '""')}"`,
+        `"${(product.ebay?.description || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+        `"${(product.description || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+        product.source || '',
+        product.last_updated || ''
+      ];
+    });
 
     // Combine headers and rows
     const csvContent = [
@@ -145,27 +283,59 @@ export default function App() {
 
   return (
     <div className="container">
-      <h1>🛍️ Amazon ASIN Lookup</h1>
-      <div className="search-box">
-        <textarea
-          value={asins}
-          onChange={(e) => setAsins(e.target.value.toUpperCase())}
-          placeholder="Enter ASIN(s) - comma or newline separated&#10;e.g., B0CGV192GK, B08N5WRWNW&#10;or one per line"
-          onKeyPress={handleKeyPress}
-          disabled={loading}
-          rows={3}
-        />
-        <button onClick={lookupProducts} disabled={!asins.trim() || loading}>
-          {loading ? "🔄 Loading..." : "🔍 Lookup"}
-        </button>
-      </div>
-      <p className="hint">💡 Enter one or more ASINs (comma or newline separated). Press Ctrl+Enter to search.</p>
+      <header className="app-header">
+        <h1>🛍️ Amazon ASIN Lookup & Product Manager</h1>
+      </header>
 
-      {error && <div className="error">❌ {error}</div>}
+      {/* Account Selector - Always visible at top */}
+      <AccountSelector
+        accounts={accounts}
+        selectedAccount={selectedAccount}
+        onSelectAccount={handleSelectAccount}
+        onAddAccount={handleAddAccount}
+      />
 
-      {products.length > 0 && (
-        <div className="results">
-          <div className="results-header-row">
+      {/* Show content only if account is selected */}
+      {selectedAccount ? (
+        <>
+          {/* View Switcher */}
+          <div className="view-switcher">
+            <button 
+              className={`view-btn ${view === 'asin-lookup' ? 'active' : ''}`}
+              onClick={() => setView('asin-lookup')}
+            >
+              🔍 ASIN Lookup
+            </button>
+            <button 
+              className={`view-btn ${view === 'manage-products' ? 'active' : ''}`}
+              onClick={() => setView('manage-products')}
+            >
+              📊 Manage Products
+            </button>
+          </div>
+
+          {/* ASIN Lookup View */}
+          {view === 'asin-lookup' && (
+            <>          <div className="search-box">
+            <textarea
+              value={asins}
+              onChange={(e) => setAsins(e.target.value.toUpperCase())}
+              placeholder="Enter ASIN(s) - comma or newline separated&#10;e.g., B0CGV192GK, B08N5WRWNW&#10;or one per line"
+              onKeyPress={handleKeyPress}
+              disabled={loading}
+              rows={3}
+            />
+            <button onClick={lookupProducts} disabled={!asins.trim() || loading}>
+              {loading ? "🔄 Loading..." : "🔍 Lookup"}
+            </button>
+          </div>
+          <p className="hint">💡 Enter one or more ASINs (comma or newline separated). Press Ctrl+Enter to search.</p>
+
+          {error && <div className="error">❌ {error}</div>}
+
+          {products.length > 0 && (
+            <div className="results">
+              <div className="results-header-row">
             <h2 className="results-header">📦 Found {products.length} Product{products.length > 1 ? 's' : ''}</h2>
             <button className="btn-export" onClick={exportToCSV}>
               📥 Export to CSV
@@ -183,7 +353,7 @@ export default function App() {
                   <th>Rating</th>
                   <th>Amazon Price</th>
                   <th>eBay Title (AI)</th>
-                  <th>eBay Image</th>
+                  <th>eBay Image Links</th>
                   <th>eBay Description (AI)</th>
                   <th>Actions</th>
                 </tr>
@@ -237,9 +407,11 @@ export default function App() {
                         <span className="no-data">Not generated</span>
                       )}
                     </td>
-                    <td className="image-cell">
-                      {product.ebay?.image ? (
-                        <img src={product.ebay.image} alt={product.ebay.title || 'eBay'} className="product-thumbnail" />
+                    <td className="image-links-cell">
+                      {product.ebay?.imageLinks ? (
+                        <div className="image-links">
+                          {product.ebay.imageLinks}
+                        </div>
                       ) : (
                         <span className="no-data">-</span>
                       )}
@@ -265,6 +437,9 @@ export default function App() {
                       <button className="btn-small" onClick={() => window.open(`https://amazon.com/dp/${product.asin}`, '_blank')}>
                         Amazon
                       </button>
+                      <button className="btn-small btn-regenerate" onClick={() => regenerateEbayContent(product.asin)} title="Regenerate eBay content">
+                        🔄 Regen
+                      </button>
                       {product.ebay?.itemId && (
                         <button className="btn-small btn-ebay" onClick={() => window.open(`https://www.ebay.com/itm/${product.ebay.itemId}`, '_blank')}>
                           eBay
@@ -275,6 +450,26 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+        </>
+      )}
+
+          {/* Manage Products View */}
+          {view === 'manage-products' && (
+            <ProductTable
+              accountId={selectedAccount?._id}
+              onProductUpdate={handleProductUpdate}
+              apiBase={API_BASE}
+            />
+          )}
+        </>
+      ) : (
+        <div className="no-account-selected">
+          <div className="empty-state">
+            <h2>👆 Please Select an Account</h2>
+            <p>Choose an existing account from the dropdown above or create a new one to get started.</p>
           </div>
         </div>
       )}

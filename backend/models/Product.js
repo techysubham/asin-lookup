@@ -72,6 +72,10 @@ const productSchema = new mongoose.Schema({
       type: String,
       default: ''
     },
+    imageLinks: {
+      type: String,
+      default: ''
+    },
     description: {
       type: String,
       default: ''
@@ -84,6 +88,13 @@ const productSchema = new mongoose.Schema({
       type: String,
       default: ''
     }
+  },
+  // Account association
+  accountId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Account',
+    default: null,
+    index: true
   },
   last_updated: {
     type: Date,
