@@ -92,6 +92,96 @@
   box-shadow: 0 2px 6px rgba(220, 53, 69, 0.4);
 }
 
+.btn-template {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  margin-right: 6px;
+}
+
+.btn-template:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.4);
+}
+
+.expanded-row {
+  background: #fafafa;
+}
+
+.expanded-row td {
+  padding: 0 !important;
+}
+
+.template-column-header {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  color: white;
+  font-weight: 700;
+  position: relative;
+}
+
+.template-column-header::before {
+  content: '🗂️';
+  margin-right: 5px;
+}
+
+.template-column-cell {
+  background: #f8f5ff;
+  border-left: 2px solid #8b5cf6;
+}
+
+/* Custom Column Styles */
+.custom-column-header {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  font-weight: 700;
+  position: relative;
+  padding: 12px 8px;
+}
+
+.btn-delete-column {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+  transition: all 0.2s;
+}
+
+.btn-delete-column:hover {
+  background: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+
+.custom-column-cell {
+  background: #f0fdf4;
+  border-left: 2px solid #10b981;
+}
+
+.custom-column-cell .inline-edit-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d1fae5;
+  border-radius: 4px;
+  background: white;
+  font-size: 13px;
+}
+
+.custom-column-cell .inline-edit-input:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+}
+
 /* Add Form Styles */
 .add-form {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
@@ -165,12 +255,21 @@
   background: white;
   max-height: 600px;
   overflow-y: auto;
+  /* Improve scrolling performance */
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .product-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  /* Improve table rendering */
+  table-layout: fixed;
+  contain: layout;
 }
 
 .product-table thead {
@@ -178,6 +277,10 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  /* Improve sticky performance */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 .product-table th {
@@ -455,6 +558,105 @@
   margin-bottom: 12px;
   border: 1px solid #f5c6cb;
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.unassigned-products {
+  background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%);
+  border: 2px solid #ffc107;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.unassigned-products h4 {
+  margin: 0 0 8px 0;
+  color: #856404;
+  font-size: 18px;
+}
+
+.unassigned-products p {
+  margin: 0 0 16px 0;
+  color: #856404;
+  font-size: 14px;
+}
+
+.unassigned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.unassigned-item {
+  background: white;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.unassigned-item:hover {
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+  transform: translateY(-2px);
+}
+
+.unassigned-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.unassigned-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.unassigned-info div {
+  flex: 1;
+}
+
+.unassigned-info strong {
+  display: block;
+  color: #495057;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.unassigned-info p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+}
+
+.btn-assign {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-assign:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
 }
 
 .btn-retry {
@@ -511,6 +713,5 @@
   .product-table td {
     padding: 6px;
     font-size: 12px;
-  }
   }
 }

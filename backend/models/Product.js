@@ -96,6 +96,56 @@ const productSchema = new mongoose.Schema({
     default: null,
     index: true
   },
+  // Category association
+  categoryId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    default: null,
+    index: true
+  },
+  // Template values (key-value pairs matching category's templateColumns)
+  templateValues: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    default: new Map()
+  },
+  // Product-specific spreadsheet template
+  spreadsheet: {
+    columns: {
+      type: [{
+        id: String,
+        name: String,
+        type: String,
+        width: Number
+      }],
+      default: function() {
+        // Initialize with 10 default columns (A-J)
+        return Array.from({ length: 10 }, (_, i) => ({
+          id: `col_${i + 1}`,
+          name: String.fromCharCode(65 + i), // A, B, C, etc.
+          type: 'text',
+          width: 150
+        }));
+      }
+    },
+    rows: {
+      type: [{
+        id: String,
+        cells: {
+          type: Map,
+          of: String
+        }
+      }],
+      default: function() {
+        // Initialize with 10 default rows
+        const cols = Array.from({ length: 10 }, (_, i) => `col_${i + 1}`);
+        return Array.from({ length: 10 }, (_, i) => ({
+          id: `row_${i + 1}`,
+          cells: new Map(cols.map(colId => [colId, '']))
+        }));
+      }
+    }
+  },
   last_updated: {
     type: Date,
     default: Date.now,

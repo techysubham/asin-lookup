@@ -7,6 +7,7 @@ const axios = require("axios");
 const path = require("path");
 const { connectDB, getProductFromDB, saveProductToDB, Product } = require("./db");
 const Account = require("./models/Account");
+const Category = require("./models/Category");
 const { generateEbayContent } = require("./services/aiService");
 const { processMultipleImages } = require("./services/imageService");
 
@@ -426,25 +427,191 @@ app.put("/products/:asin", async (req, res) => {
   }
 });
 
+// ============ Category Template Management APIs ============
+
+// Add column to category template
+app.post("/categories/:categoryId/template/column", async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    const { columnName, columnType } = req.body;
+    
+    if (!columnName) {
+      return res.status(400).json({ error: "Column name is required" });
+    }
+
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    // Generate unique column ID
+    const columnId = `col_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Add new column
+    const newColumn = {
+      columnId,
+      columnName,
+      columnType: columnType || 'text',
+      order: category.templateColumns.length
+    };
+
+    category.templateColumns.push(newColumn);
+    await category.save();
+
+    console.log(`✅ Column added to category ${categoryId}: ${columnName}`);
+    res.json(category);
+  } catch (err) {
+    console.error("Error adding column:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update column in category template
+app.put("/categories/:categoryId/template/column/:columnId", async (req, res) => {
+  try {
+    const { categoryId, columnId } = req.params;
+    const { columnName, columnType } = req.body;
+
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    const column = category.templateColumns.find(col => col.columnId === columnId);
+    if (!column) {
+      return res.status(404).json({ error: "Column not found" });
+    }
+
+    // Update column properties
+    if (columnName !== undefined) column.columnName = columnName;
+    if (columnType !== undefined) column.columnType = columnType;
+
+    await category.save();
+
+    console.log(`✅ Column updated in category ${categoryId}: ${columnId}`);
+    res.json(category);
+  } catch (err) {
+    console.error("Error updating column:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete column from category template
+app.delete("/categories/:categoryId/template/column/:columnId", async (req, res) => {
+  try {
+    const { categoryId, columnId } = req.params;
+
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    const initialLength = category.templateColumns.length;
+    category.templateColumns = category.templateColumns.filter(col => col.columnId !== columnId);
+
+    if (category.templateColumns.length === initialLength) {
+      return res.status(404).json({ error: "Column not found" });
+    }
+
+    await category.save();
+
+    // Also remove this column's values from all products in this category
+    await Product.updateMany(
+      { categoryId },
+      { $unset: { [`templateValues.${columnId}`]: "" } }
+    );
+
+    console.log(`✅ Column deleted from category ${categoryId}: ${columnId}`);
+    res.json(category);
+  } catch (err) {
+    console.error("Error deleting column:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reorder columns in category template
+app.put("/categories/:categoryId/template/reorder", async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    const { columnOrder } = req.body; // Array of columnIds in desired order
+
+    if (!Array.isArray(columnOrder)) {
+      return res.status(400).json({ error: "columnOrder must be an array" });
+    }
+
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+
+    // Update order property for each column
+    columnOrder.forEach((columnId, index) => {
+      const column = category.templateColumns.find(col => col.columnId === columnId);
+      if (column) {
+        column.order = index;
+      }
+    });
+
+    // Sort template by order
+    category.templateColumns.sort((a, b) => a.order - b.order);
+    await category.save();
+
+    console.log(`✅ Columns reordered in category ${categoryId}`);
+    res.json(category);
+  } catch (err) {
+    console.error("Error reordering columns:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update product template value
+app.put("/products/:asin/template/:columnId", async (req, res) => {
+  try {
+    const { asin, columnId } = req.params;
+    const { value } = req.body;
+
+    const product = await Product.findOne({ asin: asin.toUpperCase() });
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Update the template value
+    product.templateValues.set(columnId, value);
+    product.last_updated = new Date();
+    product.markModified('templateValues');
+    await product.save();
+
+    console.log(`✅ Template value updated for product ${asin}, column ${columnId}`);
+    res.json(product);
+  } catch (err) {
+    console.error("Error updating template value:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ End Category Template Management APIs ============
+
 // Assign product to account
 app.post("/products/:asin/assign", async (req, res) => {
   try {
     const { asin } = req.params;
-    const { accountId } = req.body;
+    const { accountId, categoryId } = req.body;
     
-    // Check if product exists and is already assigned to the SAME account
+    console.log(`📌 Assigning product ${asin} to account: ${accountId}, category: ${categoryId}`);
+    
+    // Check if product exists
     const existingProduct = await Product.findOne({ asin: asin.toUpperCase() });
     
-    if (existingProduct && existingProduct.accountId && accountId) {
-      // Only prevent if product is already in the SAME account
-      if (existingProduct.accountId.toString() === accountId.toString()) {
-        const currentAccount = await Account.findById(accountId);
-        return res.status(200).json({ 
-          alreadyExists: true,
-          message: `Product already exists in this account: ${currentAccount?.name || 'Current Account'}`,
-          product: existingProduct
-        });
-      }
+    if (!existingProduct) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+    
+    // Check if trying to assign to a different account
+    if (existingProduct.accountId && accountId && 
+        existingProduct.accountId.toString() !== accountId.toString()) {
+      return res.status(400).json({ 
+        error: "Product already assigned to a different account"
+      });
     }
     
     if (accountId) {
@@ -453,18 +620,27 @@ app.post("/products/:asin/assign", async (req, res) => {
         return res.status(404).json({ error: "Account not found" });
       }
     }
+
+    if (categoryId) {
+      const categoryExists = await Category.findById(categoryId);
+      if (!categoryExists) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+    }
+    
+    // Update both accountId and categoryId
+    const updateData = { accountId: accountId || null };
+    if (categoryId) {
+      updateData.categoryId = categoryId;
+    }
     
     const product = await Product.findOneAndUpdate(
       { asin: asin.toUpperCase() },
-      { accountId: accountId || null },
+      updateData,
       { new: true }
     );
     
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-    
-    console.log(`✅ Product ${asin} assigned to account ${accountId}`);
+    console.log(`✅ Product ${asin} assigned to account ${accountId} and category ${categoryId}`);
     res.json(product);
   } catch (err) {
     console.error("Error assigning product:", err);
@@ -473,6 +649,131 @@ app.post("/products/:asin/assign", async (req, res) => {
 });
 
 // ============ End Account Management APIs ============
+
+// ============ Category Management APIs ============
+
+// Get all categories for an account
+app.get("/accounts/:accountId/categories", async (req, res) => {
+  try {
+    const { accountId } = req.params;
+    const categories = await Category.find({ accountId, status: 'active' }).sort({ name: 1 });
+    res.json(categories);
+  } catch (err) {
+    console.error("Error fetching categories:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new category
+app.post("/categories", async (req, res) => {
+  try {
+    const { name, accountId, description } = req.body;
+    
+    if (!name || !accountId) {
+      return res.status(400).json({ error: "Name and accountId are required" });
+    }
+
+    // Check if account exists
+    const account = await Account.findById(accountId);
+    if (!account) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+
+    // Check if category with same name exists for this account
+    const existingCategory = await Category.findOne({ name, accountId });
+    if (existingCategory) {
+      return res.status(409).json({ 
+        error: "Category with this name already exists for this account" 
+      });
+    }
+
+    const category = new Category({
+      name,
+      accountId,
+      description: description || ''
+    });
+
+    await category.save();
+    console.log(`✅ New category created: ${name} for account ${accountId}`);
+    res.status(201).json(category);
+  } catch (err) {
+    console.error("Error creating category:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update category
+app.put("/categories/:id", async (req, res) => {
+  try {
+    const { name, description, status } = req.body;
+    const category = await Category.findByIdAndUpdate(
+      req.params.id,
+      { name, description, status },
+      { new: true, runValidators: true }
+    );
+    
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+    
+    console.log(`✅ Category updated: ${category.name}`);
+    res.json(category);
+  } catch (err) {
+    console.error("Error updating category:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete category
+app.delete("/categories/:id", async (req, res) => {
+  try {
+    const category = await Category.findByIdAndDelete(req.params.id);
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+    
+    // Optionally unlink products from this category
+    await Product.updateMany(
+      { categoryId: req.params.id },
+      { $set: { categoryId: null } }
+    );
+    
+    console.log(`✅ Category deleted: ${category.name}`);
+    res.json({ message: "Category deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting category:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get products by category ID
+app.get("/categories/:id/products", async (req, res) => {
+  try {
+    console.log(`🔍 Fetching products for category: ${req.params.id}`);
+    const products = await Product.find({ categoryId: req.params.id })
+      .sort({ last_updated: -1 });
+    console.log(`✅ Found ${products.length} products for category ${req.params.id}`);
+    if (products.length > 0) {
+      console.log(`📦 Sample product:`, { asin: products[0].asin, categoryId: products[0].categoryId });
+    }
+    res.json(products);
+  } catch (err) {
+    console.error("Error fetching category products:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Debug: Get all products to check categoryId
+app.get("/debug/all-products", async (req, res) => {
+  try {
+    const products = await Product.find({}).select('asin title categoryId accountId');
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ End Category Management APIs ============
 
 // Health check
 app.get("/", (req, res) => {
@@ -507,6 +808,57 @@ app.post("/generate-ebay/:asin", async (req, res) => {
     res.json({ success: true, product });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== TEMPLATE SPREADSHEET ENDPOINTS ====================
+
+// Get spreadsheet data for a specific product
+app.get('/products/:asin/spreadsheet', async (req, res) => {
+  try {
+    const { asin } = req.params;
+    const product = await Product.findOne({ asin: asin.toUpperCase() });
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Return product's spreadsheet data (already initialized with defaults)
+    const spreadsheetData = {
+      columns: product.spreadsheet?.columns || [],
+      rows: product.spreadsheet?.rows || []
+    };
+
+    res.json(spreadsheetData);
+  } catch (err) {
+    console.error('Error fetching product spreadsheet:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save spreadsheet data for a specific product
+app.put('/products/:asin/spreadsheet', async (req, res) => {
+  try {
+    const { asin } = req.params;
+    const { columns, rows } = req.body;
+
+    const product = await Product.findOneAndUpdate(
+      { asin: asin.toUpperCase() },
+      {
+        'spreadsheet.columns': columns,
+        'spreadsheet.rows': rows
+      },
+      { new: true }
+    );
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.json({ success: true, product });
+  } catch (err) {
+    console.error('Error saving template:', err);
     res.status(500).json({ error: err.message });
   }
 });

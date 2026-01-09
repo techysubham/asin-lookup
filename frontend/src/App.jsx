@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 import AccountSelector from "./AccountSelector";
+import CategorySelector from "./CategorySelector";
 import ProductTable from "./ProductTable";
+import TemplateSpreadsheet from "./TemplateSpreadsheet";
 
 export default function App() {
   const [asins, setAsins] = useState("");
@@ -13,7 +15,14 @@ export default function App() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accountsLoading, setAccountsLoading] = useState(false);
-  const [view, setView] = useState('asin-lookup'); // 'asin-lookup' or 'manage-products'
+  
+  // Category management state
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  
+  // Template spreadsheet state
+  const [selectedProductForTemplate, setSelectedProductForTemplate] = useState(null);
+  
+  const [view, setView] = useState('asin-lookup'); // 'asin-lookup', 'manage-products', or 'template'
 
   const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
@@ -60,20 +69,28 @@ export default function App() {
   // Select account
   const handleSelectAccount = (account) => {
     setSelectedAccount(account);
+    setSelectedCategory(null); // Reset category when account changes
+  };
+
+  // Select category
+  const handleSelectCategory = (category) => {
+    setSelectedCategory(category);
   };
 
   // Handle product update from table
   const handleProductUpdate = (updatedProduct) => {
     console.log('Product updated:', updatedProduct);
+    // Update product in the products array
+    setProducts(products.map(p => p.asin === updatedProduct.asin ? updatedProduct : p));
   };
 
-  // Assign product to account
-  const assignProductToAccount = async (asin, accountId) => {
+  // Assign product to account and category
+  const assignProductToAccount = async (asin, accountId, categoryId = null) => {
     try {
       const res = await fetch(`${API_BASE}/products/${asin}/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId })
+        body: JSON.stringify({ accountId, categoryId })
       });
 
       if (res.ok) {
@@ -149,9 +166,13 @@ export default function App() {
         }
         const data = await res.json();
         
-        // Auto-assign to selected account
+        // Auto-assign to selected account and category
         if (selectedAccount) {
-          const assignResult = await assignProductToAccount(data.asin, selectedAccount._id);
+          const assignResult = await assignProductToAccount(
+            data.asin, 
+            selectedAccount._id, 
+            selectedCategory?._id
+          );
           if (assignResult.alreadyExists) {
             setError(`ℹ️ ${data.asin} already exists in this account`);
           }
@@ -171,11 +192,15 @@ export default function App() {
         }
         const data = await res.json();
         
-        // Auto-assign all to selected account
+        // Auto-assign all to selected account and category
         const alreadyExists = [];
         if (selectedAccount) {
           for (const product of data) {
-            const assignResult = await assignProductToAccount(product.asin, selectedAccount._id);
+            const assignResult = await assignProductToAccount(
+              product.asin, 
+              selectedAccount._id, 
+              selectedCategory?._id
+            );
             if (assignResult.alreadyExists) {
               alreadyExists.push(product.asin);
             }
@@ -295,23 +320,41 @@ export default function App() {
         onAddAccount={handleAddAccount}
       />
 
-      {/* Show content only if account is selected */}
-      {selectedAccount ? (
+      {/* Category Selector - Show after account is selected */}
+      {selectedAccount && (
+        <CategorySelector
+          accountId={selectedAccount._id}
+          selectedCategory={selectedCategory}
+          onSelectCategory={handleSelectCategory}
+          apiBase={API_BASE}
+        />
+      )}
+
+      {/* Show content only if account and category are selected */}
+      {selectedAccount && selectedCategory ? (
         <>
           {/* View Switcher */}
           <div className="view-switcher">
             <button 
               className={`view-btn ${view === 'asin-lookup' ? 'active' : ''}`}
-              onClick={() => setView('asin-lookup')}
+              onClick={() => { setView('asin-lookup'); setSelectedProductForTemplate(null); }}
             >
               🔍 ASIN Lookup
             </button>
             <button 
               className={`view-btn ${view === 'manage-products' ? 'active' : ''}`}
-              onClick={() => setView('manage-products')}
+              onClick={() => { setView('manage-products'); setSelectedProductForTemplate(null); }}
             >
               📊 Manage Products
             </button>
+            {selectedProductForTemplate && (
+              <button 
+                className={`view-btn ${view === 'template' ? 'active' : ''}`}
+                onClick={() => setView('template')}
+              >
+                📋 Template: {selectedProductForTemplate.asin}
+              </button>
+            )}
           </div>
 
           {/* ASIN Lookup View */}
@@ -360,24 +403,25 @@ export default function App() {
               </thead>
               <tbody>
                 {products.map((product, idx) => (
-                  <tr key={idx}>
-                    <td className="asin-cell">
-                      <span className="asin-badge">{product.asin}</span>
-                    </td>
-                    <td className="image-cell">
-                      {product.images && product.images.length > 0 && (
-                        <img src={product.images[0]} alt={product.title} className="product-thumbnail" />
-                      )}
-                    </td>
-                    <td className="title-cell">
-                      <div className="product-title">{product.title}</div>
-                      {product.description && (
-                        <details className="description-toggle">
-                          <summary>Amazon Description</summary>
-                          <p className="description">{product.description}</p>
-                        </details>
-                      )}
-                    </td>
+                  <>
+                    <tr key={idx}>
+                      <td className="asin-cell">
+                        <span className="asin-badge">{product.asin}</span>
+                      </td>
+                      <td className="image-cell">
+                        {product.images && product.images.length > 0 && (
+                          <img src={product.images[0]} alt={product.title} className="product-thumbnail" />
+                        )}
+                      </td>
+                      <td className="title-cell">
+                        <div className="product-title">{product.title}</div>
+                        {product.description && (
+                          <details className="description-toggle">
+                            <summary>Amazon Description</summary>
+                            <p className="description">{product.description}</p>
+                          </details>
+                        )}
+                      </td>
                     <td className="brand-cell">{product.brand}</td>
                     <td className="rating-cell">
                       {product.rating ? (
@@ -447,6 +491,7 @@ export default function App() {
                       )}
                     </td>
                   </tr>
+                  </>
                 ))}
               </tbody>
             </table>
@@ -460,11 +505,35 @@ export default function App() {
           {view === 'manage-products' && (
             <ProductTable
               accountId={selectedAccount?._id}
+              category={selectedCategory}
               onProductUpdate={handleProductUpdate}
+              onOpenTemplate={(product) => {
+                setSelectedProductForTemplate(product);
+                setView('template');
+              }}
+              apiBase={API_BASE}
+            />
+          )}
+
+          {/* Template Spreadsheet View */}
+          {view === 'template' && selectedProductForTemplate && (
+            <TemplateSpreadsheet
+              product={selectedProductForTemplate}
+              onClose={() => {
+                setSelectedProductForTemplate(null);
+                setView('manage-products');
+              }}
               apiBase={API_BASE}
             />
           )}
         </>
+      ) : selectedAccount && !selectedCategory ? (
+        <div className="no-account-selected">
+          <div className="empty-state">
+            <h2>📁 Please Select a Category</h2>
+            <p>Choose an existing category from above or create a new one to organize your products.</p>
+          </div>
+        </div>
       ) : (
         <div className="no-account-selected">
           <div className="empty-state">
